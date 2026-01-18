@@ -407,7 +407,7 @@ def fetch_google_news(keywords: list[str]) -> list[dict]:
 
         ts = safe_parse_time(published)
         items.append({
-            "source": "GoogleNews",
+            "source": "OZYTARGET.COM",
             "title": title.strip(),
             "link": link.strip(),
             "time": published.strip(),
@@ -452,7 +452,7 @@ def fetch_bing_news(keywords: list[str]) -> list[dict]:
         ts = safe_parse_time(published)
 
         items.append({
-            "source": "BingNews",
+            "source": "OZYTARGET.COM",
             "title": title,
             "link": link,
             "time": published,
