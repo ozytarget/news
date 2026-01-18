@@ -383,14 +383,17 @@ now_ts = time.time()
 if (now_ts - st.session_state["last_fetch_ts"]) >= AUTO_REFRESH_SECONDS:
     with st.spinner("Auto-fetching latest news..."):
         items = []
+        
+        # Combine auto keywords with manual keywords
+        combined_keywords = st.session_state["auto_keywords"] + manual_keywords
 
         try:
-            items.extend(fetch_google_news(st.session_state["auto_keywords"]))
+            items.extend(fetch_google_news(combined_keywords))
         except Exception as e:
             st.warning(f"GoogleNews fetch error: {e}")
 
         try:
-            items.extend(fetch_bing_news(st.session_state["auto_keywords"]))
+            items.extend(fetch_bing_news(combined_keywords))
         except Exception as e:
             st.warning(f"BingNews fetch error: {e}")
 
@@ -400,51 +403,6 @@ if (now_ts - st.session_state["last_fetch_ts"]) >= AUTO_REFRESH_SECONDS:
 
         st.session_state["latest_news"] = items
         st.session_state["last_fetch_ts"] = now_ts
-
-
-# =========================
-# OPTIONAL: MANUAL OVERRIDE RESULTS
-# =========================
-if manual_keywords:
-    with st.expander("📄 Manual Search Results (Filtered)"):
-        with st.spinner("Fetching manual news..."):
-            manual_items = []
-            try:
-                manual_items.extend(fetch_google_news(manual_keywords))
-            except Exception as e:
-                st.warning(f"GoogleNews manual error: {e}")
-
-            try:
-                manual_items.extend(fetch_bing_news(manual_keywords))
-            except Exception as e:
-                st.warning(f"BingNews manual error: {e}")
-
-            manual_items = dedupe(manual_items)
-            manual_items = filter_institutional(manual_items, min_kw=min_kw_hits, max_noise=max_noise_hits)
-            manual_items = sort_most_recent(manual_items)
-
-        if not manual_items:
-            st.info("No manual headlines matched current filters.")
-        else:
-            for i, a in enumerate(manual_items[:10], 1):
-                st.markdown(
-                    f"""
-<div class="card">
-  <div class="meta">
-    <span class="source">{a['source']}</span>
-    <span>{time_ago(a.get('_ts', 0.0))} ago</span>
-    <span class="badge">kw={a.get('_kw_hits', 0)}</span>
-    <span class="badge">noise={a.get('_noise_hits', 0)}</span>
-  </div>
-  <div class="title">
-    <a href="{a['link']}" target="_blank" style="color:#e6edf3; text-decoration:none;">
-      {a['title']}
-    </a>
-  </div>
-</div>
-""",
-                    unsafe_allow_html=True,
-                )
 
 st.markdown("---")
 st.markdown("*Developed by Ozy | © 2025 | Institutional News Scanner |*")
