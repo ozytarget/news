@@ -434,7 +434,12 @@ def fetch_bing_news(keywords: list[str]) -> list[dict]:
 feed_box = st.container()
 
 @st.cache_data(ttl=AUTO_REFRESH_SECONDS, show_spinner=False)
-def fetch_all_sources_cached(keywords: list[str], min_kw: int, max_noise: int) -> list[dict]:
+def fetch_all_sources_cached(keywords: list[str], min_kw: int, max_noise: int, cache_buster: int = 0) -> list[dict]:
+    """
+    cache_buster:
+      - Déjalo en 0 para auto-refresh normal (usa cache TTL=30s).
+      - Pásale un número que cambie (ej: int(time.time())) para forzar un fetch real aunque exista cache.
+    """
     items: list[dict] = []
 
     try:
@@ -447,14 +452,13 @@ def fetch_all_sources_cached(keywords: list[str], min_kw: int, max_noise: int) -
     except Exception:
         pass
 
-    # Clean + gate (includes 24h cutoff inside filter_institutional)
     items = dedupe(items)
     items = filter_institutional(items, min_kw=min_kw, max_noise=max_noise)
 
-    # Score kept for badges, NOT for ordering
+    # Score solo para badges (no para ordenar)
     items = [score_bloomberg(x) for x in items]
 
-    # ORDER = MOST RECENT FIRST (what you want)
+    # ORDER = MOST RECENT FIRST
     items.sort(key=lambda x: x.get("_ts", 0.0), reverse=True)
 
     return items
@@ -496,17 +500,21 @@ if flush_cache:
     st.session_state["last_fetch_ts"] = 0.0
 
 # =========================
-# AUTO FETCH (every 30s) — force_refresh works in SAME run
+# AUTO FETCH (every 30s) — force_refresh ALWAYS fetches fresh
 # =========================
 now_ts = time.time()
 should_fetch = force_refresh or ((now_ts - st.session_state.get("last_fetch_ts", 0.0)) >= AUTO_REFRESH_SECONDS)
 
 if should_fetch:
     with st.spinner("Auto-fetching latest news..."):
+        # cache_buster forces fresh fetch when force_refresh=True
+        buster = int(now_ts) if force_refresh else 0
+
         st.session_state["latest_news"] = fetch_all_sources_cached(
             keywords=manual_keywords if manual_keywords else DEFAULT_KEYWORDS,
             min_kw=min_kw_hits,
             max_noise=max_noise_hits,
+            cache_buster=buster,
         )
         st.session_state["last_fetch_ts"] = now_ts
 
