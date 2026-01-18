@@ -322,47 +322,31 @@ def calculate_volatility_sentiment(news: list[dict]) -> tuple[float, str]:
 
 
 # =========================
-# MAIN FEED (SHOW FIRST - MOST IMPORTANT)
+# BLOOMBERG-LIKE: SMOOTH AUTO-UPDATE (render placeholder + cached fetch)
 # =========================
 
-# Show the header and auto-fetch section first (before controls)
-st.markdown('<div class="header">INDEPENDENT NEWS SCANNER — AUTO FILTERED</div>', unsafe_allow_html=True)
+# A) Placeholder estable para evitar parpadeos/flicker
+feed_box = st.container()
 
-# FETCH NOW BUTTON AT THE TOP
-col_fetch_top, col_spacer_top = st.columns([1, 3])
-with col_fetch_top:
-    if st.button("🔄 Fetch Now (Manual)", use_container_width=True, key="fetch_now_top"):
-        st.session_state["last_fetch_ts"] = 0.0  # force immediate fetch
+# B) Cache de fetch: reduce latencia y hace la UI "líquida"
+@st.cache_data(ttl=AUTO_REFRESH_SECONDS, show_spinner=False)
+def fetch_all_sources_cached(keywords: list[str], min_kw: int, max_noise: int) -> list[dict]:
+    items: list[dict] = []
 
-st.markdown("---")
+    try:
+        items.extend(fetch_google_news(keywords))
+    except Exception:
+        pass
 
-news = st.session_state.get("latest_news") or []
+    try:
+        items.extend(fetch_bing_news(keywords))
+    except Exception:
+        pass
 
-if not news:
-    st.info("📰 Loading news... Adjust settings below to customize your feed.")
-else:
-    st.subheader(f"📰 Latest Institutional Headlines ({len(news)} found)")
-    for a in news[:25]:
-        st.markdown(
-            f"""
-<div class="card">
-  <div class="meta">
-    <span class="source">{a['source']}</span>
-    <span>{time_ago(a.get('_ts', 0.0))} ago</span>
-    <span class="badge">kw={a.get('_kw_hits', 0)}</span>
-    <span class="badge">noise={a.get('_noise_hits', 0)}</span>
-    <span style="margin-left:10px;">| {a.get('time','')}</span>
-  </div>
-  <div class="title">
-    <a href="{a['link']}" target="_blank" style="color:#e6edf3; text-decoration:none;">
-      {a['title']}
-    </a>
-  </div>
-</div>
-""",
-            unsafe_allow_html=True,
-        )
-
+    items = dedupe(items)
+    items = filter_institutional(items, min_kw=min_kw, max_noise=max_noise)
+    items = sort_most_recent(items)
+    return items
 
 
 # =========================
@@ -376,43 +360,74 @@ combined_input = st.text_input(
 )
 manual_keywords = [k.strip() for k in combined_input.split(",") if k.strip()]
 
+# Fuente de verdad: guardamos keywords en session_state para que persistan
+st.session_state["auto_keywords"] = manual_keywords
+
 st.markdown("#### ⚡ Filter Settings")
 colC, colD = st.columns(2)
-
 with colC:
     min_kw_hits = st.slider("Min KW", 1, 5, 1, key="min_kw_slider")
-
 with colD:
     max_noise_hits = st.slider("Noise", 0, 3, 0, key="max_noise_slider")
 
 
 # =========================
-# AUTO FETCH (every 30s)
+# AUTO FETCH (every 30s) — smooth
 # =========================
+# Regla:
+# - Streamlit se re-ejecuta cada 30s por st_autorefresh
+# - El cache TTL asegura que no pegamos requests extra y la UI no se traba
+# - Manual button fuerza refresh limpiando cache y reseteando last_fetch_ts
+
+if st.button("Force Refresh NOW (flush cache)", use_container_width=True, key="force_refresh_flush"):
+    fetch_all_sources_cached.clear()  # limpia cache
+    st.session_state["last_fetch_ts"] = 0.0
+
 now_ts = time.time()
-if (now_ts - st.session_state["last_fetch_ts"]) >= AUTO_REFRESH_SECONDS:
+should_fetch = (now_ts - st.session_state.get("last_fetch_ts", 0.0)) >= AUTO_REFRESH_SECONDS
+
+if should_fetch:
     with st.spinner("Auto-fetching latest news..."):
-        items = []
-        
-        # Use only manual keywords (source of truth from input)
-        combined_keywords = manual_keywords
-
-        try:
-            items.extend(fetch_google_news(combined_keywords))
-        except Exception as e:
-            st.warning(f"GoogleNews fetch error: {e}")
-
-        try:
-            items.extend(fetch_bing_news(combined_keywords))
-        except Exception as e:
-            st.warning(f"BingNews fetch error: {e}")
-
-        items = dedupe(items)
-        items = filter_institutional(items, min_kw=min_kw_hits, max_noise=max_noise_hits)
-        items = sort_most_recent(items)
-
-        st.session_state["latest_news"] = items
+        st.session_state["latest_news"] = fetch_all_sources_cached(
+            keywords=manual_keywords if manual_keywords else DEFAULT_KEYWORDS,
+            min_kw=min_kw_hits,
+            max_noise=max_noise_hits,
+        )
         st.session_state["last_fetch_ts"] = now_ts
+
+
+# =========================
+# RENDER FEED (stable)
+# =========================
+with feed_box:
+    st.markdown('<div class="header">INDEPENDENT NEWS SCANNER — AUTO FILTERED</div>', unsafe_allow_html=True)
+
+    news = st.session_state.get("latest_news") or []
+
+    if not news:
+        st.info("📰 Loading news... (first fetch usually takes a few seconds)")
+    else:
+        st.subheader(f"📰 Latest Institutional Headlines ({len(news)} found)")
+        for a in news[:25]:
+            st.markdown(
+                f"""
+<div class="card">
+  <div class="meta">
+    <span class="source">{a.get('source','')}</span>
+    <span>{time_ago(a.get('_ts', 0.0))} ago</span>
+    <span class="badge">kw={a.get('_kw_hits', 0)}</span>
+    <span class="badge">noise={a.get('_noise_hits', 0)}</span>
+    <span style="margin-left:10px;">| {a.get('time','')}</span>
+  </div>
+  <div class="title">
+    <a href="{a.get('link','')}" target="_blank" style="color:#e6edf3; text-decoration:none;">
+      {a.get('title','')}
+    </a>
+  </div>
+</div>
+""",
+                unsafe_allow_html=True,
+            )
 
 st.markdown("---")
 st.markdown("*Developed by Ozy | © 2025 | Institutional News Scanner |*")
