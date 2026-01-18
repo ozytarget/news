@@ -203,8 +203,32 @@ def time_ago(ts_seconds: float) -> str:
 
 
 def count_hits(text: str, keywords: list[str]) -> int:
+    """
+    Bloomberg-style matching:
+    - Avoid substring false-positives by using word boundaries when possible
+    - Still supports multi-word phrases (e.g., 'jobless claims', 'real yield')
+    """
     s = (text or "").lower()
-    return sum(1 for kw in keywords if kw in s)
+
+    hits = 0
+    for kw in keywords:
+        k = (kw or "").strip().lower()
+        if not k:
+            continue
+
+        # If keyword contains spaces or hyphen, do a simple substring match (phrase match)
+        # Example: "jobless claims", "10-year"
+        if (" " in k) or ("-" in k):
+            if k in s:
+                hits += 1
+            continue
+
+        # Single token: match as whole word
+        # Example: "fed" should not match "defeated"
+        if re.search(r"\b" + re.escape(k) + r"\b", s):
+            hits += 1
+
+    return hits
 
 
 def dedupe(items: list[dict]) -> list[dict]:
