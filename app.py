@@ -350,19 +350,15 @@ st.markdown("---")
 st.markdown("### ⚙️  Settings & Filters")
 
 st.markdown("#### 🔍 Search Keywords")
-colA, colB = st.columns(2)
+auto_keywords_raw = st.text_input(
+    "Auto Scan Keywords (comma-separated)",
+    value=", ".join(st.session_state["auto_keywords"]),
+    key="auto_keywords_input"
+)
+st.session_state["auto_keywords"] = [k.strip() for k in auto_keywords_raw.split(",") if k.strip()]
 
-with colA:
-    auto_keywords_raw = st.text_input(
-        "Auto Scan Keywords (comma-separated)",
-        value=", ".join(st.session_state["auto_keywords"]),
-        key="auto_keywords_input"
-    )
-    st.session_state["auto_keywords"] = [k.strip() for k in auto_keywords_raw.split(",") if k.strip()]
-
-with colB:
-    manual_keywords_raw = st.text_input("Manual Keywords (comma-separated)", value="Trump", key="manual_keywords_input")
-    manual_keywords = [k.strip() for k in manual_keywords_raw.split(",") if k.strip()]
+manual_keywords_raw = st.text_input("Manual Keywords (comma-separated)", value="Trump", key="manual_keywords_input")
+manual_keywords = [k.strip() for k in manual_keywords_raw.split(",") if k.strip()]
 
 st.markdown("#### ⚡ Filter Settings")
 colC, colD = st.columns(2)
