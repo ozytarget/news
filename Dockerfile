@@ -2,17 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install minimal dependencies
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN pip install --upgrade pip
 
-# Copy requirements  
-COPY requirements_prod.txt .
-RUN pip install --no-cache-dir -r requirements_prod.txt
+RUN pip install streamlit feedparser requests pandas numpy python-dateutil plotly
 
-# Copy app
-COPY app_simple.py app.py
+COPY app_simple.py .
 
 EXPOSE 8501
 
-# Run Streamlit directly
-CMD ["python", "-m", "streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", "--logger.level=info"]
+CMD ["streamlit", "run", "app_simple.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
