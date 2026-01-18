@@ -4,7 +4,7 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1
 
-RUN pip install --no-cache-dir streamlit feedparser requests pandas numpy python-dateutil plotly
+RUN pip install --no-cache-dir streamlit streamlit-autorefresh feedparser requests pandas numpy python-dateutil plotly
 
 COPY app.py .
 
