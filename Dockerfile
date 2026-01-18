@@ -4,10 +4,8 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1
 
-RUN pip install --no-cache-dir streamlit
-
-COPY app_minimal.py app.py
+COPY app_http.py .
 
 EXPOSE 8501
 
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--logger.level=info"]
+CMD ["python", "app_http.py"]
