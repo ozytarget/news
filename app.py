@@ -314,6 +314,14 @@ def calculate_volatility_sentiment(news: list[dict]) -> tuple[float, str]:
 # Show the header and auto-fetch section first (before controls)
 st.markdown('<div class="header">INDEPENDENT NEWS SCANNER — AUTO FILTERED</div>', unsafe_allow_html=True)
 
+# FETCH NOW BUTTON AT THE TOP
+col_fetch_top, col_spacer_top = st.columns([1, 3])
+with col_fetch_top:
+    if st.button("🔄 Fetch Now (Manual)", use_container_width=True, key="fetch_now_top"):
+        st.session_state["last_fetch_ts"] = 0.0  # force immediate fetch
+
+st.markdown("---")
+
 news = st.session_state.get("latest_news") or []
 
 if not news:
@@ -363,12 +371,6 @@ with colC:
 
 with colD:
     max_noise_hits = st.slider("Noise", 0, 3, 0, key="max_noise_slider")
-
-col_fetch, col_spacer = st.columns([1, 3])
-
-with col_fetch:
-    if st.button("🔄 Fetch Now (Manual)", use_container_width=True):
-        st.session_state["last_fetch_ts"] = 0.0  # force immediate fetch
 
 
 # =========================
