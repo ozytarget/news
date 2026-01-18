@@ -1,12 +1,14 @@
 # app.py
-# Independent News Scanner (Google + Bing) with Auto Filters every 30 seconds
-# - Runs standalone (no tabs required)
-# - Auto refresh every 30s (no sleep loops)
-# - Automatic institutional/noise filtering
-# - Manual keyword override + auto scan keywords
+# BLOOMBERG MODE — Institutional News Scanner (Google RSS + Bing News)
+# Features:
+# - Auto refresh every 30s (Streamlit rerun + cached fetch TTL=30s)
+# - Hard cutoff: last 24h only (configurable)
+# - Bloomberg-like scoring: whitelist/blacklist + clickbait penalties + wire language bonus + high-impact triggers
+# - BREAKING TOP 10 + ALL headlines ranked
+# - Anti-noise for "options" by excluding sports/travel terms in Google query
 #
 # Install:
-#   pip install streamlit streamlit-autorefresh feedparser requests pandas python-dateutil plotly
+#   pip install streamlit streamlit-autorefresh feedparser requests python-dateutil
 #
 # Run:
 #   streamlit run app.py
@@ -14,24 +16,24 @@
 import os
 import re
 import time
-from datetime import datetime, timezone
-from urllib.parse import quote
+from datetime import timezone
+from urllib.parse import quote, urlparse
 
 import requests
 import streamlit as st
 from dateutil import parser as date_parser
 from streamlit_autorefresh import st_autorefresh
-import plotly.graph_objects as go
 
 
 # =========================
-# CONFIG (Bloomberg-like recency)
+# CONFIG
 # =========================
 AUTO_REFRESH_SECONDS = 30
 
-# Hard cutoff: descarta noticias más viejas que X horas
-MAX_ARTICLE_AGE_HOURS = 24   # prueba 24; si quieres más amplitud usa 48
+# Hard cutoff: only keep articles within last X hours
+MAX_ARTICLE_AGE_HOURS = 24
 
+# Good default (you can paste your bigger Bloomberg keyword preset in the UI input)
 DEFAULT_KEYWORDS = ["SPY", "FOMC", "Treasury", "yields", "inflation", "options", "gamma", "liquidity"]
 
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
@@ -44,95 +46,104 @@ HEADERS = {
     )
 }
 
-# Set this environment variable:
-#   BING_NEWS_API_KEY=your_key
 BING_API_KEY = os.getenv("BING_NEWS_API_KEY", "").strip()
 
-# Institutional and noise filters (Bloomberg-style) - EXPANDED
+
+# =========================
+# FILTERS (Institutional + Noise)
+# =========================
 INSTITUTIONAL_KEYWORDS = [
-    # ----------------------------
     # FED / CENTRAL BANKS
-    # ----------------------------
-    "fomc", "fed", "federal reserve", "policy makers", "rate path", "terminal rate",
-    "restrictive", "accommodative", "forward guidance", "dot plot", "policy recalibration",
-    "policy normalization", "balance sheet", "runoff", "qt", "qe", "inflation persistence",
-    "labor market rebalancing", "ecb", "boj", "boe",
+    "fomc", "fed", "federal reserve", "powell", "minutes", "dot plot",
+    "forward guidance", "terminal rate", "rate path", "restrictive", "accommodative",
+    "balance sheet", "runoff", "qt", "qe", "ecb", "boj", "boe",
 
-    # ----------------------------
-    # TREASURY / RATES / BONDS
-    # ----------------------------
-    "treasury issuance", "treasury refunding", "refunding announcement", "issuance calendar",
-    "auction results", "auction tail", "bid-to-cover", "weak demand", "strong demand",
-    "curve steepening", "curve flattening", "curve repricing", "real yields", "real yield",
-    "term premium", "duration risk", "supply overhang", "yields", "yield", "bonds", "debt ceiling",
+    # MACRO DATA
+    "cpi", "ppi", "pce", "core pce", "inflation", "jobs report", "nonfarm payrolls", "nfp",
+    "jobless claims", "unemployment", "gdp", "retail sales", "ism", "pmi",
 
-    # ----------------------------
+    # TREASURY / RATES
+    "treasury", "auction", "bid-to-cover", "bid to cover", "tail",
+    "2-year", "2 year", "10-year", "10 year", "real yield", "real yields",
+    "yields", "yield curve", "term premium", "curve steepening", "curve flattening",
+
     # FLOWS / POSITIONING
-    # ----------------------------
-    "institutional positioning", "asset allocation", "asset allocation shift",
-    "rebalancing flows", "portfolio reallocation", "reallocation flows", "portfolio rebalancing",
-    "passive inflows", "etf inflows", "etf creations", "etf redemptions", "creations", "redemptions",
-    "cta positioning", "risk parity", "risk parity adjustment", "volatility targeting",
-    "volatility targeting funds", "systematic strategies",
+    "rebalancing", "asset allocation", "positioning", "cta", "risk parity",
+    "etf inflows", "etf outflows", "creations", "redemptions",
 
-    # ----------------------------
-    # DERIVATIVES / OPTIONS
-    # ----------------------------
-    "dealer hedging", "dealer hedging activity", "gamma exposure", "negative gamma", "positive gamma",
-    "options-related flows", "options related flows", "open interest", "open interest concentration",
-    "strike concentration", "strike congestion", "expiration-driven volatility", "expiration driven volatility",
-    "implied volatility", "implied volatility pricing", "skew steepening", "convexity hedging",
+    # OPTIONS / VOL / DEALER
+    "options", "open interest", "gamma", "gamma exposure", "negative gamma", "positive gamma",
+    "dealer hedging", "delta hedging", "0dte", "implied volatility", "skew", "vix",
 
-    # ----------------------------
-    # RISK / LIQUIDITY / SYSTEM
-    # ----------------------------
-    "liquidity conditions", "funding stress", "market dislocation", "financial conditions",
-    "financial conditions tightening", "financial conditions easing", "systemic risk",
-    "deleveraging", "volatility spike", "risk-off", "risk off", "cross-asset volatility",
-    "cross asset volatility", "global capital flows", "funding markets", "stress indicators",
-
-    # ----------------------------
-    # CORPORATE (HIGH SIGNAL)
-    # ----------------------------
-    "earnings outlook", "guidance", "guidance reaffirmed", "guidance withdrawn",
-    "margin compression", "margin outlook", "cost pressures", "pricing power",
-    "capital allocation", "buyback authorization", "debt refinancing", "credit downgrade",
-    "outlook", "covenant pressure",
-
-    # ----------------------------
-    # GEOPOL (MARKET MOVING)
-    # ----------------------------
-    "sanctions enforcement", "trade restrictions", "tariffs", "supply-chain disruption",
-    "supply chain disruption", "shipping route disruption", "shipping disruptions",
-    "energy supply risk", "geopolitical risk premium", "fiscal sustainability", "sovereign risk",
-
-    # ----------------------------
-    # CRYPTO (INSTITUTIONAL)
-    # ----------------------------
-    "etf", "etf inflows", "institutional adoption", "spot market demand", "spot demand",
-    "custody services", "regulatory clarity", "market structure", "exchange outflows",
-    "bitcoin", "ethereum",
-
-    # ----------------------------
-    # BLOOMBERG QUALITY PHRASES
-    # ----------------------------
-    "said in a statement", "according to people familiar", "people familiar with the matter",
-    "data showed", "markets repriced", "investors reassessed", "policy makers signaled",
-    "traders priced in", "priced in",
+    # LIQUIDITY / SYSTEM
+    "liquidity", "funding stress", "financial conditions", "repo", "sofr", "stress",
 ]
 
 NOISE_KEYWORDS = [
     "meme", "viral", "to the moon", "diamond hands", "paper hands",
-    "social media", "influencer", "hype", "ape",
-    "soars", "surges", "plunges", "rockets",
-    "could", "might", "hopes",
+    "influencer", "hype", "ape",
+    "rockets", "soars", "surges", "plunges",
+]
+
+
+# =========================
+# BLOOMBERG SCORING LAYERS
+# =========================
+SOURCE_WHITELIST = [
+    "reuters.com", "bloomberg.com", "ft.com", "wsj.com",
+    "federalreserve.gov", "treasury.gov", "bls.gov", "bea.gov",
+    "cnbc.com", "marketwatch.com", "barrons.com",
+]
+
+SOURCE_BLACKLIST = [
+    "prnewswire.com", "businesswire.com", "globenewswire.com",
+    "accesswire.com", "newsfilecorp.com",
+    "seekingalpha.com", "themotleyfool.com", "investorplace.com",
+]
+
+CLICKBAIT_PHRASES = [
+    "what you need to know", "explained", "here's why", "here is why",
+    "everything you need to know", "you won't believe",
+    "price prediction", "forecast", "top picks", "buy now",
+]
+
+MODAL_WEAK_WORDS = [
+    "could", "might", "may", "likely", "unlikely",
+    "expected", "expected to", "set to", "poised to", "seen as",
+]
+
+WIRE_PHRASES = [
+    "said in a statement", "in a statement",
+    "according to people familiar", "people familiar with the matter",
+    "sources said", "data showed", "figures showed",
+    "markets repriced", "investors reassessed",
+    "traders priced in", "priced in",
+]
+
+HIGH_IMPACT_TRIGGERS = [
+    "cpi", "core cpi", "ppi", "pce", "core pce",
+    "nonfarm payrolls", "nfp", "jobless claims", "unemployment rate",
+    "fomc", "fed minutes", "dot plot", "powell",
+    "auction", "refunding", "bid-to-cover", "tail",
+    "2-year", "10-year", "real yield", "sofr", "repo", "qt",
+    "vix", "0dte", "gamma", "dealer hedging", "skew",
+]
+
+# Anti-noise terms specifically for the word “options”
+NEGATIVE_KEYWORDS = [
+    # sports
+    "quarterback", "broncos", "giants", "nfl", "nba", "mlb", "nhl", "soccer", "football",
+    # travel / visas / airlines
+    "rebooking", "flight", "flights", "airline", "visa",
+    # lifestyle
+    "brain", "learning", "health", "fitness",
 ]
 
 
 # =========================
 # UI
 # =========================
-st.set_page_config(page_title="Independent Institutional News Scanner", layout="wide")
+st.set_page_config(page_title="Bloomberg Mode News Scanner", layout="wide")
 
 st.markdown(
     """
@@ -140,11 +151,12 @@ st.markdown(
 .stApp { background: linear-gradient(135deg, #0d1117 0%, #161b22 100%); color: #e6edf3; }
 .header { color: #79c0ff; font-size: 28px; font-weight: 800; letter-spacing: 1px; font-family: 'Courier New', monospace; }
 .card { border-left: 3px solid #1f6feb; padding: 12px 14px; margin-bottom: 10px; background: rgba(20, 20, 30, 0.92); border-radius: 6px; }
-.meta { color: #8b949e; font-size: 13px; }
-.source { color: #79c0ff; font-size: 13px; font-weight: 700; margin-right: 10px; }
-.title { color: #e6edf3; font-size: 16px; font-weight: 650; line-height: 1.35; }
-.badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:6px; border:1px solid rgba(121,192,255,.25); color:#79c0ff; }
+.meta { color: #8b949e; font-size: 12px; }
+.source { color: #79c0ff; font-size: 12px; font-weight: 700; margin-right: 10px; }
+.title { color: #e6edf3; font-size: 15px; font-weight: 650; line-height: 1.35; }
+.badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; margin-left:6px; border:1px solid rgba(121,192,255,.25); color:#79c0ff; }
 hr { border: 0; border-top: 1px solid rgba(255,255,255,.08); }
+.small { color:#8b949e; font-size:12px; }
 </style>
 """,
     unsafe_allow_html=True,
@@ -195,40 +207,6 @@ def count_hits(text: str, keywords: list[str]) -> int:
     return sum(1 for kw in keywords if kw in s)
 
 
-def filter_institutional(items: list[dict], min_kw: int, max_noise: int) -> list[dict]:
-    out = []
-    now_ts = time.time()
-    max_age_sec = float(MAX_ARTICLE_AGE_HOURS) * 3600.0
-
-    for a in items:
-        title = (a.get("title") or "").strip()
-        if len(title) < 5:
-            continue
-
-        ts = float(a.get("_ts") or 0.0)
-        if ts <= 0:
-            # Si no hay timestamp confiable, lo descartamos (Bloomberg-style)
-            continue
-
-        # HARD CUTOFF por antigüedad
-        if (now_ts - ts) > max_age_sec:
-            continue
-
-        # Signal sobre título + summary
-        blob = f"{title}\n{a.get('summary','')}" .strip().lower()
-
-        kw_hits = count_hits(blob, INSTITUTIONAL_KEYWORDS)
-        noise_hits = count_hits(blob, NOISE_KEYWORDS)
-
-        if kw_hits >= min_kw and noise_hits <= max_noise:
-            b = dict(a)
-            b["_kw_hits"] = kw_hits
-            b["_noise_hits"] = noise_hits
-            out.append(b)
-
-    return out
-
-
 def dedupe(items: list[dict]) -> list[dict]:
     seen = set()
     out = []
@@ -247,32 +225,141 @@ def dedupe(items: list[dict]) -> list[dict]:
     return out
 
 
-def sort_most_recent(items: list[dict]) -> list[dict]:
-    return sorted(items, key=lambda x: x.get("_ts", 0.0), reverse=True)
+def filter_institutional(items: list[dict], min_kw: int, max_noise: int) -> list[dict]:
+    out = []
+    now_ts = time.time()
+    max_age_sec = float(MAX_ARTICLE_AGE_HOURS) * 3600.0
+
+    for a in items:
+        title = (a.get("title") or "").strip()
+        if len(title) < 5:
+            continue
+
+        ts = float(a.get("_ts") or 0.0)
+        if ts <= 0:
+            continue
+
+        # Hard cutoff by time
+        if (now_ts - ts) > max_age_sec:
+            continue
+
+        blob = f"{title}\n{a.get('summary','')}".strip().lower()
+
+        kw_hits = count_hits(blob, INSTITUTIONAL_KEYWORDS)
+        noise_hits = count_hits(blob, NOISE_KEYWORDS)
+
+        if kw_hits >= min_kw and noise_hits <= max_noise:
+            b = dict(a)
+            b["_kw_hits"] = kw_hits
+            b["_noise_hits"] = noise_hits
+            out.append(b)
+
+    return out
 
 
+def _extract_domain(url: str) -> str:
+    try:
+        host = (urlparse(url).netloc or "").lower()
+        return host.replace("www.", "")
+    except Exception:
+        return ""
+
+
+def _domain_in(domain: str, patterns: list[str]) -> bool:
+    if not domain:
+        return False
+    return any(p in domain for p in patterns)
+
+
+def score_bloomberg(item: dict) -> dict:
+    title = (item.get("title") or "").strip()
+    summary = (item.get("summary") or "").strip()
+    blob = f"{title}\n{summary}".lower()
+
+    domain = _extract_domain(item.get("link") or "")
+    score = 0
+    reasons = []
+
+    kw_hits = int(item.get("_kw_hits", 0))
+    noise_hits = int(item.get("_noise_hits", 0))
+
+    # Institutional signal
+    if kw_hits:
+        add = min(40, kw_hits * 6)
+        score += add
+        reasons.append(f"+inst({kw_hits})")
+
+    # High impact (macro/rates/options)
+    hi_hits = count_hits(blob, HIGH_IMPACT_TRIGGERS)
+    if hi_hits:
+        add = min(30, hi_hits * 8)
+        score += add
+        reasons.append(f"+impact({hi_hits})")
+
+    # Wire language
+    wire_hits = count_hits(blob, WIRE_PHRASES)
+    if wire_hits:
+        add = min(16, wire_hits * 8)
+        score += add
+        reasons.append(f"+wire({wire_hits})")
+
+    # Sources
+    if _domain_in(domain, SOURCE_WHITELIST):
+        score += 18
+        reasons.append("+whitelist")
+    if _domain_in(domain, SOURCE_BLACKLIST):
+        score -= 28
+        reasons.append("-blacklist")
+
+    # Noise penalty
+    if noise_hits:
+        score -= min(30, noise_hits * 10)
+        reasons.append(f"-noise({noise_hits})")
+
+    # Clickbait/modals penalty
+    cb_hits = count_hits(blob, CLICKBAIT_PHRASES)
+    if cb_hits:
+        score -= min(30, cb_hits * 15)
+        reasons.append(f"-clickbait({cb_hits})")
+
+    modal_hits = count_hits(blob, MODAL_WEAK_WORDS)
+    if modal_hits:
+        score -= min(18, modal_hits * 6)
+        reasons.append(f"-modal({modal_hits})")
+
+    score = max(-50, min(100, score))
+
+    out = dict(item)
+    out["_domain"] = domain
+    out["_score"] = score
+    out["_reasons"] = " ".join(reasons[:6])
+    return out
+
+
+# =========================
+# FETCHERS
+# =========================
 def fetch_google_news(keywords: list[str]) -> list[dict]:
-    # 1) Query base
     base = " OR ".join(keywords) if keywords else "SPY"
 
-    # 2) Forzar recencia en Google News:
-    #    "when:1d" o "when:7d" funciona en News search y suele funcionar en RSS
-    #    Nota: si quieres 48h usa when:2d
-    when = "when:1d" if MAX_ARTICLE_AGE_HOURS <= 24 else "when:2d" if MAX_ARTICLE_AGE_HOURS <= 48 else "when:7d"
+    # Force recency on Google News query
+    when = (
+        "when:1d" if MAX_ARTICLE_AGE_HOURS <= 24
+        else "when:2d" if MAX_ARTICLE_AGE_HOURS <= 48
+        else "when:7d"
+    )
 
-    # 3) (Opcional Bloomberg) excluir ruido típico por query.
-    #    Mantengo minimalista para no "matar" resultados.
-    query = f"({base}) {when}"
+    negative = " ".join([f"-{w}" for w in NEGATIVE_KEYWORDS])
 
-    q = quote(query)
-    url = GOOGLE_NEWS_RSS.format(q=q)
+    query = f"({base}) {when} {negative}"
+    url = GOOGLE_NEWS_RSS.format(q=quote(query))
 
     feed = requests.get(url, headers=HEADERS, timeout=12)
     feed.raise_for_status()
 
     import feedparser
-
     parsed = feedparser.parse(feed.content)
+
     items = []
     for e in parsed.entries[:50]:
         title = getattr(e, "title", "") or ""
@@ -297,10 +384,6 @@ def fetch_bing_news(keywords: list[str]) -> list[dict]:
         return []
 
     query = " OR ".join(keywords) if keywords else "SPY"
-
-    # Ajusta freshness en función de tu MAX_ARTICLE_AGE_HOURS:
-    # - Day = últimas ~24h
-    # - Week = última semana
     freshness = "Day" if MAX_ARTICLE_AGE_HOURS <= 24 else "Week"
 
     params = {
@@ -323,49 +406,23 @@ def fetch_bing_news(keywords: list[str]) -> list[dict]:
         link = (v.get("url") or "").strip()
         published = (v.get("datePublished") or "").strip()
         ts = safe_parse_time(published)
+
         items.append({
             "source": "BingNews",
             "title": title,
             "link": link,
             "time": published,
-            "summary": "",   # Bing endpoint aquí no trae summary limpio
+            "summary": "",
             "_ts": ts,
         })
     return items
 
 
-def calculate_retail_sentiment(news: list[dict]) -> tuple[float, str]:
-    bullish = ["beats", "surge", "rise", "gain", "record", "strong", "upgrade"]
-    bearish = ["miss", "fall", "drop", "cut", "downgrade", "weak", "recession", "default"]
-    score = 0
-    for a in news:
-        t = (a.get("title") or "").lower()
-        score += sum(1 for w in bullish if w in t)
-        score -= sum(1 for w in bearish if w in t)
-    norm = 0.5 + max(-10, min(10, score)) / 20.0
-    text = "Bullish" if norm > 0.55 else "Bearish" if norm < 0.45 else "Neutral"
-    return norm, text
-
-
-def calculate_volatility_sentiment(news: list[dict]) -> tuple[float, str]:
-    risk_words = ["volatility", "turmoil", "selloff", "panic", "stress", "crisis", "risk-off", "spike"]
-    hits = 0
-    for a in news:
-        t = (a.get("title") or "").lower()
-        hits += sum(1 for w in risk_words if w in t)
-    score = min(100.0, hits * 8.0)
-    text = "Low" if score < 33 else "Elevated" if score < 66 else "High"
-    return score, text
-
-
 # =========================
-# BLOOMBERG-LIKE: SMOOTH AUTO-UPDATE (render placeholder + cached fetch)
+# SMOOTH AUTO-UPDATE (cached fetch)
 # =========================
-
-# A) Placeholder estable para evitar parpadeos/flicker
 feed_box = st.container()
 
-# B) Cache de fetch: reduce latencia y hace la UI "líquida"
 @st.cache_data(ttl=AUTO_REFRESH_SECONDS, show_spinner=False)
 def fetch_all_sources_cached(keywords: list[str], min_kw: int, max_noise: int) -> list[dict]:
     items: list[dict] = []
@@ -382,12 +439,14 @@ def fetch_all_sources_cached(keywords: list[str], min_kw: int, max_noise: int) -
 
     items = dedupe(items)
     items = filter_institutional(items, min_kw=min_kw, max_noise=max_noise)
-    items = sort_most_recent(items)
+    items = [score_bloomberg(x) for x in items]
+    items.sort(key=lambda x: (x.get("_score", 0), x.get("_ts", 0.0)), reverse=True)
+
     return items
 
 
 # =========================
-# SETTINGS & CONTROLS (AT THE BOTTOM)
+# SETTINGS
 # =========================
 st.markdown("---")
 combined_input = st.text_input(
@@ -396,8 +455,6 @@ combined_input = st.text_input(
     key="combined_keywords_input"
 )
 manual_keywords = [k.strip() for k in combined_input.split(",") if k.strip()]
-
-# Fuente de verdad: guardamos keywords en session_state para que persistan
 st.session_state["auto_keywords"] = manual_keywords
 
 st.markdown("#### ⚡ Filter Settings")
@@ -407,23 +464,23 @@ with colC:
 with colD:
     max_noise_hits = st.slider("Noise", 0, 3, 0, key="max_noise_slider")
 
+colA, colB = st.columns([1, 3])
+with colA:
+    if st.button("Force Refresh NOW (flush cache)", use_container_width=True, key="force_refresh_flush"):
+        fetch_all_sources_cached.clear()
+        st.session_state["last_fetch_ts"] = 0.0
+with colB:
+    st.markdown(
+        f"<div class='small'>Auto-refresh every {AUTO_REFRESH_SECONDS}s | Cutoff: last {MAX_ARTICLE_AGE_HOURS}h</div>",
+        unsafe_allow_html=True
+    )
+
 
 # =========================
-# AUTO FETCH (every 30s) — smooth
+# AUTO FETCH (every 30s)
 # =========================
-# Regla:
-# - Streamlit se re-ejecuta cada 30s por st_autorefresh
-# - El cache TTL asegura que no pegamos requests extra y la UI no se traba
-# - Manual button fuerza refresh limpiando cache y reseteando last_fetch_ts
-
-if st.button("Force Refresh NOW (flush cache)", use_container_width=True, key="force_refresh_flush"):
-    fetch_all_sources_cached.clear()  # limpia cache
-    st.session_state["last_fetch_ts"] = 0.0
-
 now_ts = time.time()
-should_fetch = (now_ts - st.session_state.get("last_fetch_ts", 0.0)) >= AUTO_REFRESH_SECONDS
-
-if should_fetch:
+if (now_ts - st.session_state.get("last_fetch_ts", 0.0)) >= AUTO_REFRESH_SECONDS:
     with st.spinner("Auto-fetching latest news..."):
         st.session_state["latest_news"] = fetch_all_sources_cached(
             keywords=manual_keywords if manual_keywords else DEFAULT_KEYWORDS,
@@ -434,26 +491,55 @@ if should_fetch:
 
 
 # =========================
-# RENDER FEED (stable)
+# RENDER: BREAKING TOP 10 + ALL ranked
 # =========================
 with feed_box:
-    st.markdown('<div class="header">INDEPENDENT NEWS SCANNER — AUTO FILTERED</div>', unsafe_allow_html=True)
+    st.markdown('<div class="header">BLOOMBERG MODE — NEWS SCANNER</div>', unsafe_allow_html=True)
 
     news = st.session_state.get("latest_news") or []
 
     if not news:
         st.info("📰 Loading news... (first fetch usually takes a few seconds)")
     else:
-        st.subheader(f"📰 Latest Institutional Headlines ({len(news)} found)")
-        for a in news[:25]:
+        breaking = news[:10]
+        rest = news[10:60]
+
+        st.subheader("🚨 BREAKING — TOP 10 (ranked by Bloomberg score)")
+        for a in breaking:
             st.markdown(
                 f"""
 <div class="card">
   <div class="meta">
     <span class="source">{a.get('source','')}</span>
     <span>{time_ago(a.get('_ts', 0.0))} ago</span>
+    <span class="badge">score={a.get('_score', 0)}</span>
     <span class="badge">kw={a.get('_kw_hits', 0)}</span>
     <span class="badge">noise={a.get('_noise_hits', 0)}</span>
+    <span class="badge">{a.get('_domain','')}</span>
+    <span style="margin-left:10px;">| {a.get('time','')}</span>
+  </div>
+  <div class="title">
+    <a href="{a.get('link','')}" target="_blank" style="color:#e6edf3; text-decoration:none;">
+      {a.get('title','')}
+    </a>
+    <span class="badge" style="margin-left:8px;">{a.get('_reasons','')}</span>
+  </div>
+</div>
+""",
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("---")
+        st.subheader(f"📰 ALL HEADLINES (ranked) — showing {len(rest)} of {len(news)}")
+        for a in rest:
+            st.markdown(
+                f"""
+<div class="card">
+  <div class="meta">
+    <span class="source">{a.get('source','')}</span>
+    <span>{time_ago(a.get('_ts', 0.0))} ago</span>
+    <span class="badge">score={a.get('_score', 0)}</span>
+    <span class="badge">{a.get('_domain','')}</span>
     <span style="margin-left:10px;">| {a.get('time','')}</span>
   </div>
   <div class="title">
@@ -467,4 +553,4 @@ with feed_box:
             )
 
 st.markdown("---")
-st.markdown("*Developed by Ozy | © 2025 | Institutional News Scanner |*")
+st.markdown("*Developed by ozy | © 2026 | Bloomberg Mode News Scanner |*")
