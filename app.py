@@ -347,9 +347,6 @@ else:
 # SETTINGS & CONTROLS (AT THE BOTTOM)
 # =========================
 st.markdown("---")
-st.markdown("### ⚙️  Settings & Filters")
-
-st.markdown("#### 🔍 Search Keywords (Auto + Manual)")
 combined_input = st.text_input(
     "Enter keywords (comma-separated)",
     value=", ".join(st.session_state["auto_keywords"]),
