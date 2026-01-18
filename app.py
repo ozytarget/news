@@ -342,66 +342,6 @@ else:
         )
 
 
-# =========================
-# SENTIMENT ANALYSIS
-# =========================
-st.markdown("---")
-st.subheader("📊 Market Sentiment (Based on Latest News)")
-
-if news:
-    sentiment_score, sentiment_text = calculate_retail_sentiment(news)
-    volatility_score, volatility_text = calculate_volatility_sentiment(news)
-
-    c1, c2 = st.columns(2)
-
-    with c1:
-        fig_sentiment = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=sentiment_score * 100,
-            title={"text": "Retail Sentiment Score", "font": {"size": 16, "color": "#FFFFFF"}},
-            gauge={
-                "axis": {"range": [0, 100], "tickcolor": "#FFFFFF", "tickfont": {"color": "#FFFFFF"}},
-                "bar": {"color": "#32CD32" if sentiment_score > 0.5 else "#FF4500", "thickness": 0.2},
-                "bgcolor": "rgba(0, 0, 0, 0.1)",
-                "steps": [
-                    {"range": [0, 30], "color": "#FF4500"},
-                    {"range": [30, 70], "color": "#FFD700"},
-                    {"range": [70, 100], "color": "#32CD32"},
-                ],
-            }
-        ))
-        fig_sentiment.update_layout(
-            height=250,
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font={"color": "#FFFFFF"},
-        )
-        st.plotly_chart(fig_sentiment, use_container_width=True)
-        st.markdown(f"**Sentiment:** {sentiment_text} ({sentiment_score:.2%})")
-
-    with c2:
-        fig_volatility = go.Figure(go.Bar(
-            x=["Volatility Perception"],
-            y=[volatility_score],
-            text=[f"{volatility_score:.1f}"],
-            textposition="auto",
-            marker_color="#FFD700" if volatility_score < 50 else "#FF4500",
-            marker=dict(line=dict(color="#FFFFFF", width=2)),
-        ))
-        fig_volatility.update_layout(
-            yaxis_range=[0, 100],
-            height=250,
-            showlegend=False,
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font={"color": "#FFFFFF"},
-            yaxis={"gridcolor": "rgba(255,255,255,0.2)"},
-        )
-        st.plotly_chart(fig_volatility, use_container_width=True)
-        st.markdown(f"**Volatility:** {volatility_text} ({volatility_score:.1f}/100)")
-else:
-    st.info("No news available yet. Adjust settings below to fetch articles.")
-
 
 # =========================
 # SETTINGS & CONTROLS (AT THE BOTTOM)
