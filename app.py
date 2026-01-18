@@ -25,9 +25,13 @@ import plotly.graph_objects as go
 
 
 # =========================
-# CONFIG
+# CONFIG (Bloomberg-like recency)
 # =========================
 AUTO_REFRESH_SECONDS = 30
+
+# Hard cutoff: descarta noticias más viejas que X horas
+MAX_ARTICLE_AGE_HOURS = 24   # prueba 24; si quieres más amplitud usa 48
+
 DEFAULT_KEYWORDS = ["SPY", "FOMC", "Treasury", "yields", "inflation", "options", "gamma", "liquidity"]
 
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
@@ -193,13 +197,25 @@ def count_hits(text: str, keywords: list[str]) -> int:
 
 def filter_institutional(items: list[dict], min_kw: int, max_noise: int) -> list[dict]:
     out = []
+    now_ts = time.time()
+    max_age_sec = float(MAX_ARTICLE_AGE_HOURS) * 3600.0
+
     for a in items:
         title = (a.get("title") or "").strip()
         if len(title) < 5:
             continue
 
-        # Count hits on title + summary (if exists) for better signal
-        blob = f"{title}\n{a.get('summary','')}".strip()
+        ts = float(a.get("_ts") or 0.0)
+        if ts <= 0:
+            # Si no hay timestamp confiable, lo descartamos (Bloomberg-style)
+            continue
+
+        # HARD CUTOFF por antigüedad
+        if (now_ts - ts) > max_age_sec:
+            continue
+
+        # Signal sobre título + summary
+        blob = f"{title}\n{a.get('summary','')}" .strip().lower()
 
         kw_hits = count_hits(blob, INSTITUTIONAL_KEYWORDS)
         noise_hits = count_hits(blob, NOISE_KEYWORDS)
@@ -209,6 +225,7 @@ def filter_institutional(items: list[dict], min_kw: int, max_noise: int) -> list
             b["_kw_hits"] = kw_hits
             b["_noise_hits"] = noise_hits
             out.append(b)
+
     return out
 
 
@@ -235,12 +252,25 @@ def sort_most_recent(items: list[dict]) -> list[dict]:
 
 
 def fetch_google_news(keywords: list[str]) -> list[dict]:
-    q = quote(" OR ".join(keywords)) if keywords else quote("SPY")
+    # 1) Query base
+    base = " OR ".join(keywords) if keywords else "SPY"
+
+    # 2) Forzar recencia en Google News:
+    #    "when:1d" o "when:7d" funciona en News search y suele funcionar en RSS
+    #    Nota: si quieres 48h usa when:2d
+    when = "when:1d" if MAX_ARTICLE_AGE_HOURS <= 24 else "when:2d" if MAX_ARTICLE_AGE_HOURS <= 48 else "when:7d"
+
+    # 3) (Opcional Bloomberg) excluir ruido típico por query.
+    #    Mantengo minimalista para no "matar" resultados.
+    query = f"({base}) {when}"
+
+    q = quote(query)
     url = GOOGLE_NEWS_RSS.format(q=q)
+
     feed = requests.get(url, headers=HEADERS, timeout=12)
     feed.raise_for_status()
 
-    import feedparser  # local import to keep deps explicit
+    import feedparser
 
     parsed = feedparser.parse(feed.content)
     items = []
@@ -267,12 +297,18 @@ def fetch_bing_news(keywords: list[str]) -> list[dict]:
         return []
 
     query = " OR ".join(keywords) if keywords else "SPY"
+
+    # Ajusta freshness en función de tu MAX_ARTICLE_AGE_HOURS:
+    # - Day = últimas ~24h
+    # - Week = última semana
+    freshness = "Day" if MAX_ARTICLE_AGE_HOURS <= 24 else "Week"
+
     params = {
         "q": query,
         "mkt": "en-US",
         "count": 25,
         "sortBy": "Date",
-        "freshness": "Day",
+        "freshness": freshness,
         "safeSearch": "Off",
         "textFormat": "Raw",
     }
@@ -292,6 +328,7 @@ def fetch_bing_news(keywords: list[str]) -> list[dict]:
             "title": title,
             "link": link,
             "time": published,
+            "summary": "",   # Bing endpoint aquí no trae summary limpio
             "_ts": ts,
         })
     return items
