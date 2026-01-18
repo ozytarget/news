@@ -437,10 +437,15 @@ def fetch_all_sources_cached(keywords: list[str], min_kw: int, max_noise: int) -
     except Exception:
         pass
 
+    # Clean + gate (includes 24h cutoff inside filter_institutional)
     items = dedupe(items)
     items = filter_institutional(items, min_kw=min_kw, max_noise=max_noise)
+
+    # Score kept for badges, NOT for ordering
     items = [score_bloomberg(x) for x in items]
-    items.sort(key=lambda x: (x.get("_score", 0), x.get("_ts", 0.0)), reverse=True)
+
+    # ORDER = MOST RECENT FIRST (what you want)
+    items.sort(key=lambda x: x.get("_ts", 0.0), reverse=True)
 
     return items
 
@@ -491,21 +496,18 @@ if (now_ts - st.session_state.get("last_fetch_ts", 0.0)) >= AUTO_REFRESH_SECONDS
 
 
 # =========================
-# RENDER: BREAKING TOP 10 + ALL ranked
+# RENDER: ONE FEED (MOST RECENT FIRST) — no headings, no separation
 # =========================
 with feed_box:
-    st.markdown('<div class="header">BLOOMBERG MODE — NEWS SCANNER</div>', unsafe_allow_html=True)
+    st.markdown('<div class="header">BLOOMBERG MODE — LIVE FEED (MOST RECENT)</div>', unsafe_allow_html=True)
 
     news = st.session_state.get("latest_news") or []
 
     if not news:
         st.info("📰 Loading news... (first fetch usually takes a few seconds)")
     else:
-        breaking = news[:10]
-        rest = news[10:60]
-
-        st.subheader("🚨 BREAKING — TOP 10 (ranked by Bloomberg score)")
-        for a in breaking:
+        # Single continuous feed (already sorted by _ts desc in fetch)
+        for a in news[:80]:
             st.markdown(
                 f"""
 <div class="card">
@@ -523,29 +525,6 @@ with feed_box:
       {a.get('title','')}
     </a>
     <span class="badge" style="margin-left:8px;">{a.get('_reasons','')}</span>
-  </div>
-</div>
-""",
-                unsafe_allow_html=True,
-            )
-
-        st.markdown("---")
-        st.subheader(f"📰 ALL HEADLINES (ranked) — showing {len(rest)} of {len(news)}")
-        for a in rest:
-            st.markdown(
-                f"""
-<div class="card">
-  <div class="meta">
-    <span class="source">{a.get('source','')}</span>
-    <span>{time_ago(a.get('_ts', 0.0))} ago</span>
-    <span class="badge">score={a.get('_score', 0)}</span>
-    <span class="badge">{a.get('_domain','')}</span>
-    <span style="margin-left:10px;">| {a.get('time','')}</span>
-  </div>
-  <div class="title">
-    <a href="{a.get('link','')}" target="_blank" style="color:#e6edf3; text-decoration:none;">
-      {a.get('title','')}
-    </a>
   </div>
 </div>
 """,
