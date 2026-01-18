@@ -469,16 +469,10 @@ with colC:
 with colD:
     max_noise_hits = st.slider("Noise", 0, 3, 0, key="max_noise_slider")
 
-colA, colB = st.columns([1, 3])
-with colA:
-    if st.button("Force Refresh NOW (flush cache)", use_container_width=True, key="force_refresh_flush"):
-        fetch_all_sources_cached.clear()
-        st.session_state["last_fetch_ts"] = 0.0
-with colB:
-    st.markdown(
-        f"<div class='small'>Auto-refresh every {AUTO_REFRESH_SECONDS}s | Cutoff: last {MAX_ARTICLE_AGE_HOURS}h</div>",
-        unsafe_allow_html=True
-    )
+st.markdown(
+    f"<div class='small'>Auto-refresh every {AUTO_REFRESH_SECONDS}s | Cutoff: last {MAX_ARTICLE_AGE_HOURS}h</div>",
+    unsafe_allow_html=True
+)
 
 
 # =========================
@@ -499,7 +493,13 @@ if (now_ts - st.session_state.get("last_fetch_ts", 0.0)) >= AUTO_REFRESH_SECONDS
 # RENDER: ONE FEED (MOST RECENT FIRST) — no headings, no separation
 # =========================
 with feed_box:
-    st.markdown('<div class="header">OZYTARGET NEWS</div>', unsafe_allow_html=True)
+    col_header, col_refresh = st.columns([4, 1])
+    with col_header:
+        st.markdown('<div class="header">OZYTARGET NEWS</div>', unsafe_allow_html=True)
+    with col_refresh:
+        if st.button("🔄 Refresh", use_container_width=True, key="force_refresh_flush"):
+            fetch_all_sources_cached.clear()
+            st.session_state["last_fetch_ts"] = 0.0
 
     news = st.session_state.get("latest_news") or []
 
