@@ -2,12 +2,22 @@
 headless = true
 port = 8501
 address = "0.0.0.0"
+enableCORS = false
+enableXsrfProtection = false
 
 [client]
 showErrorDetails = true
+showSidebarNavigation = true
 
 [logger]
 level = "info"
+
+[theme]
+base = "dark"
+primaryColor = "#00d4ff"
+backgroundColor = "#0a0e27"
+secondaryBackgroundColor = "#1a1f3a"
+textColor = "#ffffff"
 headless = true
 port = 8501
 enableXsrfProtection = true

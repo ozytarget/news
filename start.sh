@@ -4,8 +4,8 @@ echo "Python version:"
 python --version
 
 echo ""
-echo "Installed packages:"
-pip list
+echo "Installed packages (key ones):"
+pip list | grep -E "streamlit|feedparser|requests|pandas"
 
 echo ""
 echo "Testing imports:"
@@ -18,5 +18,10 @@ echo "Streamlit version:"
 streamlit --version
 
 echo ""
-echo "Starting Streamlit..."
-streamlit run app_simple.py --server.port 8501 --server.address 0.0.0.0
+echo "Starting Streamlit on 0.0.0.0:8501..."
+exec streamlit run app_simple.py \
+  --server.port=8501 \
+  --server.address=0.0.0.0 \
+  --server.headless=true \
+  --logger.level=info \
+  --client.showErrorDetails=true
