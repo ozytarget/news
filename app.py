@@ -499,7 +499,7 @@ if (now_ts - st.session_state.get("last_fetch_ts", 0.0)) >= AUTO_REFRESH_SECONDS
 # RENDER: ONE FEED (MOST RECENT FIRST) — no headings, no separation
 # =========================
 with feed_box:
-    st.markdown('<div class="header">BLOOMBERG MODE — LIVE FEED (MOST RECENT)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="header">OZYTARGET NEWS</div>', unsafe_allow_html=True)
 
     news = st.session_state.get("latest_news") or []
 
