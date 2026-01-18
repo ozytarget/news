@@ -6,7 +6,7 @@
 # - Manual keyword override + auto scan keywords
 #
 # Install:
-#   pip install streamlit requests pandas python-dateutil plotly streamlit-autorefresh
+#   pip install streamlit streamlit-autorefresh feedparser requests pandas python-dateutil plotly
 #
 # Run:
 #   streamlit run app.py
@@ -197,8 +197,13 @@ def filter_institutional(items: list[dict], min_kw: int, max_noise: int) -> list
         title = (a.get("title") or "").strip()
         if len(title) < 5:
             continue
-        kw_hits = count_hits(title, INSTITUTIONAL_KEYWORDS)
-        noise_hits = count_hits(title, NOISE_KEYWORDS)
+
+        # Count hits on title + summary (if exists) for better signal
+        blob = f"{title}\n{a.get('summary','')}".strip()
+
+        kw_hits = count_hits(blob, INSTITUTIONAL_KEYWORDS)
+        noise_hits = count_hits(blob, NOISE_KEYWORDS)
+
         if kw_hits >= min_kw and noise_hits <= max_noise:
             b = dict(a)
             b["_kw_hits"] = kw_hits
@@ -211,10 +216,16 @@ def dedupe(items: list[dict]) -> list[dict]:
     seen = set()
     out = []
     for a in items:
-        t = re.sub(r"\s+", " ", (a.get("title") or "").strip().lower())[:140]
-        if not t or t in seen:
+        link = (a.get("link") or "").strip()
+        if link:
+            key = ("link", link)
+        else:
+            t = re.sub(r"\s+", " ", (a.get("title") or "").strip().lower())
+            key = ("title", t[:240])
+
+        if key in seen:
             continue
-        seen.add(t)
+        seen.add(key)
         out.append(a)
     return out
 
@@ -237,12 +248,15 @@ def fetch_google_news(keywords: list[str]) -> list[dict]:
         title = getattr(e, "title", "") or ""
         link = getattr(e, "link", "") or ""
         published = getattr(e, "published", "") or ""
+        summary = getattr(e, "summary", "") or ""
+
         ts = safe_parse_time(published)
         items.append({
             "source": "GoogleNews",
             "title": title.strip(),
             "link": link.strip(),
             "time": published.strip(),
+            "summary": summary.strip(),
             "_ts": ts,
         })
     return items
@@ -361,7 +375,6 @@ combined_input = st.text_input(
     key="combined_keywords_input"
 )
 manual_keywords = [k.strip() for k in combined_input.split(",") if k.strip()]
-st.session_state["auto_keywords"] = manual_keywords
 
 st.markdown("#### ⚡ Filter Settings")
 colC, colD = st.columns(2)
@@ -381,8 +394,8 @@ if (now_ts - st.session_state["last_fetch_ts"]) >= AUTO_REFRESH_SECONDS:
     with st.spinner("Auto-fetching latest news..."):
         items = []
         
-        # Combine auto keywords with manual keywords
-        combined_keywords = st.session_state["auto_keywords"] + manual_keywords
+        # Use only manual keywords (source of truth from input)
+        combined_keywords = manual_keywords
 
         try:
             items.extend(fetch_google_news(combined_keywords))
