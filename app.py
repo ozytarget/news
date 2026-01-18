@@ -237,6 +237,9 @@ def filter_institutional(items: list[dict], min_kw: int, max_noise: int) -> list
         "brain", "learning", "health", "fitness",
     ]
 
+    # One compiled regex (faster + cleaner)
+    hard_block_re = re.compile(r"\b(" + "|".join(map(re.escape, hard_block)) + r")\b", re.IGNORECASE)
+
     for a in items:
         title = (a.get("title") or "").strip()
         if len(title) < 5:
@@ -249,14 +252,15 @@ def filter_institutional(items: list[dict], min_kw: int, max_noise: int) -> list
         if (now_ts - ts) > max_age_sec:
             continue
 
-        blob = f"{title}\n{a.get('summary','')}".strip().lower()
+        blob = f"{title}\n{a.get('summary','')}".strip()
 
         # HARD BLOCK (kills most "options" garbage)
-        if any(w in blob for w in hard_block):
+        if hard_block_re.search(blob):
             continue
 
-        kw_hits = count_hits(blob, INSTITUTIONAL_KEYWORDS)
-        noise_hits = count_hits(blob, NOISE_KEYWORDS)
+        blob_l = blob.lower()
+        kw_hits = count_hits(blob_l, INSTITUTIONAL_KEYWORDS)
+        noise_hits = count_hits(blob_l, NOISE_KEYWORDS)
 
         if kw_hits >= min_kw and noise_hits <= max_noise:
             b = dict(a)
@@ -393,7 +397,13 @@ def fetch_bing_news(keywords: list[str]) -> list[dict]:
     if not BING_API_KEY:
         return []
 
-    query = " OR ".join(keywords) if keywords else "SPY"
+    base = " OR ".join(keywords) if keywords else "SPY"
+
+    # Bing soporta operadores booleanos; esto ayuda a filtrar desde origen
+    # (No es perfecto, pero reduce bastante el ruido)
+    negatives = " OR ".join(NEGATIVE_KEYWORDS)
+    query = f"({base}) NOT ({negatives})"
+
     freshness = "Day" if MAX_ARTICLE_AGE_HOURS <= 24 else "Week"
 
     params = {
