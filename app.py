@@ -444,7 +444,5 @@ if manual_keywords:
 </div>
 """,
                     unsafe_allow_html=True,
-                )
-
 st.markdown("---")
-st.markdown("*Developed by Ozy | © 2025 | Institutional News Scanner | [GitHub](https://github.com/ozytarget/news)*")
+st.markdown("*Developed by Ozy | © 2025 | Institutional News Scanner |*")
