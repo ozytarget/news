@@ -136,10 +136,10 @@ st.markdown(
 .stApp { background: linear-gradient(135deg, #0d1117 0%, #161b22 100%); color: #e6edf3; }
 .header { color: #79c0ff; font-size: 28px; font-weight: 800; letter-spacing: 1px; font-family: 'Courier New', monospace; }
 .card { border-left: 3px solid #1f6feb; padding: 12px 14px; margin-bottom: 10px; background: rgba(20, 20, 30, 0.92); border-radius: 6px; }
-.meta { color: #8b949e; font-size: 11px; }
-.source { color: #79c0ff; font-size: 11px; font-weight: 700; margin-right: 10px; }
-.title { color: #e6edf3; font-size: 13px; font-weight: 650; line-height: 1.35; }
-.badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:10px; margin-left:6px; border:1px solid rgba(121,192,255,.25); color:#79c0ff; }
+.meta { color: #8b949e; font-size: 13px; }
+.source { color: #79c0ff; font-size: 13px; font-weight: 700; margin-right: 10px; }
+.title { color: #e6edf3; font-size: 16px; font-weight: 650; line-height: 1.35; }
+.badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:6px; border:1px solid rgba(121,192,255,.25); color:#79c0ff; }
 hr { border: 0; border-top: 1px solid rgba(255,255,255,.08); }
 </style>
 """,
