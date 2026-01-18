@@ -230,6 +230,13 @@ def filter_institutional(items: list[dict], min_kw: int, max_noise: int) -> list
     now_ts = time.time()
     max_age_sec = float(MAX_ARTICLE_AGE_HOURS) * 3600.0
 
+    # Hard blocklist (sports / travel / lifestyle) — applied AFTER fetch for ALL sources
+    hard_block = [
+        "quarterback", "broncos", "giants", "nfl", "nba", "mlb", "nhl", "soccer", "football",
+        "rebooking", "flight", "flights", "airline", "visa",
+        "brain", "learning", "health", "fitness",
+    ]
+
     for a in items:
         title = (a.get("title") or "").strip()
         if len(title) < 5:
@@ -239,11 +246,14 @@ def filter_institutional(items: list[dict], min_kw: int, max_noise: int) -> list
         if ts <= 0:
             continue
 
-        # Hard cutoff by time
         if (now_ts - ts) > max_age_sec:
             continue
 
         blob = f"{title}\n{a.get('summary','')}".strip().lower()
+
+        # HARD BLOCK (kills most "options" garbage)
+        if any(w in blob for w in hard_block):
+            continue
 
         kw_hits = count_hits(blob, INSTITUTIONAL_KEYWORDS)
         noise_hits = count_hits(blob, NOISE_KEYWORDS)
@@ -451,7 +461,7 @@ def fetch_all_sources_cached(keywords: list[str], min_kw: int, max_noise: int) -
 
 
 # =========================
-# SETTINGS
+# SETTINGS + MANUAL REFRESH (triggered BEFORE fetch)
 # =========================
 st.markdown("---")
 combined_input = st.text_input(
@@ -469,17 +479,29 @@ with colC:
 with colD:
     max_noise_hits = st.slider("Noise", 0, 3, 0, key="max_noise_slider")
 
-st.markdown(
-    f"<div class='small'>Auto-refresh every {AUTO_REFRESH_SECONDS}s | Cutoff: last {MAX_ARTICLE_AGE_HOURS}h</div>",
-    unsafe_allow_html=True
-)
+colA, colB, colC2 = st.columns([1, 1, 2])
+with colA:
+    force_refresh = st.button("🔄 Refresh NOW", use_container_width=True, key="force_refresh_now")
+with colB:
+    flush_cache = st.button("🧹 Flush Cache", use_container_width=True, key="flush_cache_now")
+with colC2:
+    st.markdown(
+        f"<div class='small'>Auto-refresh every {AUTO_REFRESH_SECONDS}s | Cutoff: last {MAX_ARTICLE_AGE_HOURS}h</div>",
+        unsafe_allow_html=True
+    )
 
+# If user asks to flush cache, do it immediately
+if flush_cache:
+    fetch_all_sources_cached.clear()
+    st.session_state["last_fetch_ts"] = 0.0
 
 # =========================
-# AUTO FETCH (every 30s)
+# AUTO FETCH (every 30s) — force_refresh works in SAME run
 # =========================
 now_ts = time.time()
-if (now_ts - st.session_state.get("last_fetch_ts", 0.0)) >= AUTO_REFRESH_SECONDS:
+should_fetch = force_refresh or ((now_ts - st.session_state.get("last_fetch_ts", 0.0)) >= AUTO_REFRESH_SECONDS)
+
+if should_fetch:
     with st.spinner("Auto-fetching latest news..."):
         st.session_state["latest_news"] = fetch_all_sources_cached(
             keywords=manual_keywords if manual_keywords else DEFAULT_KEYWORDS,
@@ -493,20 +515,13 @@ if (now_ts - st.session_state.get("last_fetch_ts", 0.0)) >= AUTO_REFRESH_SECONDS
 # RENDER: ONE FEED (MOST RECENT FIRST) — no headings, no separation
 # =========================
 with feed_box:
-    col_header, col_refresh = st.columns([4, 1])
-    with col_header:
-        st.markdown('<div class="header">OZYTARGET NEWS</div>', unsafe_allow_html=True)
-    with col_refresh:
-        if st.button("🔄 Refresh", use_container_width=True, key="force_refresh_flush"):
-            fetch_all_sources_cached.clear()
-            st.session_state["last_fetch_ts"] = 0.0
+    st.markdown('<div class="header">OZYTARGET NEWS</div>', unsafe_allow_html=True)
 
     news = st.session_state.get("latest_news") or []
 
     if not news:
         st.info("📰 Loading news... (first fetch usually takes a few seconds)")
     else:
-        # Single continuous feed (already sorted by _ts desc in fetch)
         for a in news[:80]:
             st.markdown(
                 f"""
@@ -532,4 +547,4 @@ with feed_box:
             )
 
 st.markdown("---")
-st.markdown("*Developed by ozy | © 2026 | Bloomberg Mode News Scanner |*")
+st.markdown("*Developed by ozy | © 2026 | Mode News Scanner |*")
