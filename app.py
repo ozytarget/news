@@ -349,7 +349,8 @@ else:
 st.markdown("---")
 st.markdown("### ⚙️  Settings & Filters")
 
-colA, colB, colC, colD = st.columns([2, 2, 1, 1])
+st.markdown("#### 🔍 Search Keywords")
+colA, colB = st.columns(2)
 
 with colA:
     auto_keywords_raw = st.text_input(
@@ -362,6 +363,9 @@ with colA:
 with colB:
     manual_keywords_raw = st.text_input("Manual Keywords (comma-separated)", value="Trump", key="manual_keywords_input")
     manual_keywords = [k.strip() for k in manual_keywords_raw.split(",") if k.strip()]
+
+st.markdown("#### ⚡ Filter Settings")
+colC, colD = st.columns(2)
 
 with colC:
     min_kw_hits = st.slider("Min KW", 1, 5, 1, key="min_kw_slider")
