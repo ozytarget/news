@@ -8,17 +8,12 @@ COPY requirements.txt .
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application
+# Copy application and config
 COPY app.py .
-
-# Create .streamlit config directory
-RUN mkdir -p .streamlit
-
-# Create streamlit config
-RUN echo "[server]\nheadless = true\nport = 8501\nenableXsrfProtection = false\n[client]\ntoolbarMode = \"minimal\"" > .streamlit/config.toml
+COPY .streamlit/ .streamlit/
 
 # Expose port
 EXPOSE 8501
 
-# Run streamlit
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# Run streamlit with explicit configuration
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]
