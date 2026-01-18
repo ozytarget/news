@@ -146,8 +146,6 @@ hr { border: 0; border-top: 1px solid rgba(255,255,255,.08); }
     unsafe_allow_html=True,
 )
 
-st.markdown('<div class="header">INDEPENDENT NEWS SCANNER — AUTO FILTERED</div>', unsafe_allow_html=True)
-
 # Auto-refresh tick (no blocking)
 st_autorefresh(interval=AUTO_REFRESH_SECONDS * 1000, key="auto_refresh_tick")
 
@@ -310,114 +308,18 @@ def calculate_volatility_sentiment(news: list[dict]) -> tuple[float, str]:
 
 
 # =========================
-# CONTROLS
+# MAIN FEED (SHOW FIRST - MOST IMPORTANT)
 # =========================
-colA, colB, colC, colD = st.columns([2, 2, 1, 1])
 
-with colA:
-    auto_keywords_raw = st.text_input(
-        "Auto Scan Keywords (comma-separated)",
-        value=", ".join(st.session_state["auto_keywords"]),
-    )
-    st.session_state["auto_keywords"] = [k.strip() for k in auto_keywords_raw.split(",") if k.strip()]
-
-with colB:
-    manual_keywords_raw = st.text_input("Manual Keywords (comma-separated)", value="Trump")
-    manual_keywords = [k.strip() for k in manual_keywords_raw.split(",") if k.strip()]
-
-with colC:
-    min_kw_hits = st.slider("Min KW", 1, 5, 1)
-
-with colD:
-    max_noise_hits = st.slider("Noise", 0, 3, 0)
-
-# Manual fetch button
-if st.button("Fetch Now (Manual Keywords )"):
-    st.session_state["last_fetch_ts"] = 0.0  # force auto block below to fetch immediately
-
-
-# =========================
-# AUTO FETCH (every 30s)
-# =========================
-now_ts = time.time()
-if (now_ts - st.session_state["last_fetch_ts"]) >= AUTO_REFRESH_SECONDS:
-    with st.spinner("Auto-fetching latest news..."):
-        items = []
-
-        try:
-            items.extend(fetch_google_news(st.session_state["auto_keywords"]))
-        except Exception as e:
-            st.warning(f"GoogleNews fetch error: {e}")
-
-        try:
-            items.extend(fetch_bing_news(st.session_state["auto_keywords"]))
-        except Exception as e:
-            st.warning(f"BingNews fetch error: {e}")
-
-        items = dedupe(items)
-        items = filter_institutional(items, min_kw=min_kw_hits, max_noise=max_noise_hits)
-        items = sort_most_recent(items)
-
-        st.session_state["latest_news"] = items
-        st.session_state["last_fetch_ts"] = now_ts
-
-
-# =========================
-# OPTIONAL: MANUAL OVERRIDE RESULTS
-# =========================
-if manual_keywords:
-    with st.expander("Manual Search Results (Filtered)"):
-        with st.spinner("Fetching manual news..."):
-            manual_items = []
-            try:
-                manual_items.extend(fetch_google_news(manual_keywords))
-            except Exception as e:
-                st.warning(f"GoogleNews manual error: {e}")
-
-            try:
-                manual_items.extend(fetch_bing_news(manual_keywords))
-            except Exception as e:
-                st.warning(f"BingNews manual error: {e}")
-
-            manual_items = dedupe(manual_items)
-            manual_items = filter_institutional(manual_items, min_kw=min_kw_hits, max_noise=max_noise_hits)
-            manual_items = sort_most_recent(manual_items)
-
-        if not manual_items:
-            st.info("No manual headlines matched current filters.")
-        else:
-            for i, a in enumerate(manual_items[:10], 1):
-                st.markdown(
-                    f"""
-<div class="card">
-  <div class="meta">
-    <span class="source">{a['source']}</span>
-    <span>{time_ago(a.get('_ts', 0.0))} ago</span>
-    <span class="badge">kw={a.get('_kw_hits', 0)}</span>
-    <span class="badge">noise={a.get('_noise_hits', 0)}</span>
-    <span style="margin-left:10px;">| {a.get('time','')}</span>
-  </div>
-  <div class="title">
-    <a href="{a['link']}" target="_blank" style="color:#e6edf3; text-decoration:none;">
-      {a['title']}
-    </a>
-  </div>
-</div>
-""",
-                    unsafe_allow_html=True,
-                )
-
-
-# =========================
-# MAIN FEED
-# =========================
-st.markdown("---")
-st.subheader("Latest Institutional Headlines (Auto)")
+# Show the header and auto-fetch section first (before controls)
+st.markdown('<div class="header">INDEPENDENT NEWS SCANNER — AUTO FILTERED</div>', unsafe_allow_html=True)
 
 news = st.session_state.get("latest_news") or []
+
 if not news:
-    st.warning("No headlines matched filters. Try Noise=1 or Min KW=1 and broaden keywords.")
+    st.info("📰 Loading news... Adjust settings below to customize your feed.")
 else:
+    st.subheader(f"📰 Latest Institutional Headlines ({len(news)} found)")
     for a in news[:25]:
         st.markdown(
             f"""
@@ -441,10 +343,10 @@ else:
 
 
 # =========================
-# SENTIMENT
+# SENTIMENT ANALYSIS
 # =========================
 st.markdown("---")
-st.subheader("Market Sentiment (Based on Latest News)")
+st.subheader("📊 Market Sentiment (Based on Latest News)")
 
 if news:
     sentiment_score, sentiment_text = calculate_retail_sentiment(news)
@@ -498,7 +400,111 @@ if news:
         st.plotly_chart(fig_volatility, use_container_width=True)
         st.markdown(f"**Volatility:** {volatility_text} ({volatility_score:.1f}/100)")
 else:
-    st.info("No news available yet. Auto refresh will keep fetching.")
+    st.info("No news available yet. Adjust settings below to fetch articles.")
+
+
+# =========================
+# SETTINGS & CONTROLS (AT THE BOTTOM)
+# =========================
+st.markdown("---")
+st.markdown("### ⚙️  Settings & Filters")
+
+colA, colB, colC, colD = st.columns([2, 2, 1, 1])
+
+with colA:
+    auto_keywords_raw = st.text_input(
+        "Auto Scan Keywords (comma-separated)",
+        value=", ".join(st.session_state["auto_keywords"]),
+        key="auto_keywords_input"
+    )
+    st.session_state["auto_keywords"] = [k.strip() for k in auto_keywords_raw.split(",") if k.strip()]
+
+with colB:
+    manual_keywords_raw = st.text_input("Manual Keywords (comma-separated)", value="Trump", key="manual_keywords_input")
+    manual_keywords = [k.strip() for k in manual_keywords_raw.split(",") if k.strip()]
+
+with colC:
+    min_kw_hits = st.slider("Min KW", 1, 5, 1, key="min_kw_slider")
+
+with colD:
+    max_noise_hits = st.slider("Noise", 0, 3, 0, key="max_noise_slider")
+
+col_fetch, col_spacer = st.columns([1, 3])
+
+with col_fetch:
+    if st.button("🔄 Fetch Now (Manual)", use_container_width=True):
+        st.session_state["last_fetch_ts"] = 0.0  # force immediate fetch
+
+
+# =========================
+# AUTO FETCH (every 30s)
+# =========================
+now_ts = time.time()
+if (now_ts - st.session_state["last_fetch_ts"]) >= AUTO_REFRESH_SECONDS:
+    with st.spinner("Auto-fetching latest news..."):
+        items = []
+
+        try:
+            items.extend(fetch_google_news(st.session_state["auto_keywords"]))
+        except Exception as e:
+            st.warning(f"GoogleNews fetch error: {e}")
+
+        try:
+            items.extend(fetch_bing_news(st.session_state["auto_keywords"]))
+        except Exception as e:
+            st.warning(f"BingNews fetch error: {e}")
+
+        items = dedupe(items)
+        items = filter_institutional(items, min_kw=min_kw_hits, max_noise=max_noise_hits)
+        items = sort_most_recent(items)
+
+        st.session_state["latest_news"] = items
+        st.session_state["last_fetch_ts"] = now_ts
+
+
+# =========================
+# OPTIONAL: MANUAL OVERRIDE RESULTS
+# =========================
+if manual_keywords:
+    with st.expander("📄 Manual Search Results (Filtered)"):
+        with st.spinner("Fetching manual news..."):
+            manual_items = []
+            try:
+                manual_items.extend(fetch_google_news(manual_keywords))
+            except Exception as e:
+                st.warning(f"GoogleNews manual error: {e}")
+
+            try:
+                manual_items.extend(fetch_bing_news(manual_keywords))
+            except Exception as e:
+                st.warning(f"BingNews manual error: {e}")
+
+            manual_items = dedupe(manual_items)
+            manual_items = filter_institutional(manual_items, min_kw=min_kw_hits, max_noise=max_noise_hits)
+            manual_items = sort_most_recent(manual_items)
+
+        if not manual_items:
+            st.info("No manual headlines matched current filters.")
+        else:
+            for i, a in enumerate(manual_items[:10], 1):
+                st.markdown(
+                    f"""
+<div class="card">
+  <div class="meta">
+    <span class="source">{a['source']}</span>
+    <span>{time_ago(a.get('_ts', 0.0))} ago</span>
+    <span class="badge">kw={a.get('_kw_hits', 0)}</span>
+    <span class="badge">noise={a.get('_noise_hits', 0)}</span>
+  </div>
+  <div class="title">
+    <a href="{a['link']}" target="_blank" style="color:#e6edf3; text-decoration:none;">
+      {a['title']}
+    </a>
+  </div>
+</div>
+""",
+                    unsafe_allow_html=True,
+                )
 
 st.markdown("---")
-st.markdown("*Developed by Ozy | © 2025*")
+st.markdown("*Developed by Ozy | © 2025 | Institutional News Scanner | [GitHub](https://github.com/ozytarget/news)*")
